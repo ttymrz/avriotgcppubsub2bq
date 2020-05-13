@@ -3,6 +3,7 @@
 import argparse
 import json
 from datetime import datetime
+import threading, queue
 
 def pubsub2bq(
     project_id, subscription_name, dataset_id, table_id, timeout=None
@@ -11,6 +12,9 @@ def pubsub2bq(
     # [START pubsub_subscriber_flow_settings]
     from google.cloud import pubsub_v1
     from google.cloud import bigquery
+
+    # queue
+    q = queue.Queue()
 
     # TODO project_id = "Your Google Cloud Project ID"
     # TODO subscription_name = "Your Pub/Sub subscription name"
@@ -22,19 +26,27 @@ def pubsub2bq(
         project_id, subscription_name
     )
 
-    # bigquery client
-    client = bigquery.Client(project=project_id)
-    dataset_ref = client.dataset(dataset_id)
-    table_ref = dataset_ref.table(table_id)
-
     def callback(message):
         print("Received message: {}".format(message.data))
         jsonmsg = json.loads(message.data)
         jsonmsg['timestamp'] = datetime.utcfromtimestamp(jsonmsg['timestamp']).isoformat()
         print('json: {}'.format(jsonmsg))
-        job = client.load_table_from_json([jsonmsg], table_ref)
-        job.result()
+        q.put(jsonmsg)
         message.ack()
+
+    # bigquery client
+    client = bigquery.Client(project=project_id)
+    dataset_ref = client.dataset(dataset_id)
+    table_ref = dataset_ref.table(table_id)
+
+    def worker_bq():
+        print('Running worker_bq')
+
+        while True:
+            jsonmsg = q.get()
+            print('bq load')
+            job = client.load_table_from_json([jsonmsg], table_ref)
+            job.result()
 
     # Limit the subscriber to only have ten outstanding messages at a time.
     flow_control = pubsub_v1.types.FlowControl(max_messages=10)
@@ -44,6 +56,10 @@ def pubsub2bq(
     )
     print("Listening for messages on {}..".format(subscription_path))
     print("Insert messages to {}..\n".format(table_ref.path))
+
+    # start worker_bq thread
+    t = threading.Thread(target=worker_bq, name='worker_bq')
+    t.start()
 
     # result() in a future will block indefinitely if `timeout` is not set,
     # unless an exception is encountered first.
