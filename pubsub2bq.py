@@ -6,7 +6,7 @@ from datetime import datetime
 import threading, queue
 
 def pubsub2bq(
-    project_id, subscription_name, dataset_id, table_id, timeout=None
+    project_id, subscription_id, dataset_id, table_id, timeout=None
 ):
     """Receives messages from a pull subscription with flow control."""
     # [START pubsub_subscriber_flow_settings]
@@ -16,14 +16,15 @@ def pubsub2bq(
     # queue
     q = queue.Queue()
 
-    # TODO project_id = "Your Google Cloud Project ID"
-    # TODO subscription_name = "Your Pub/Sub subscription name"
-    # TODO timeout = 5.0  # "How long the subscriber should listen for
-    # messages in seconds"
+    # TODO(developer)
+    # project_id = "your-project-id"
+    # subscription_id = "your-subscription-id"
+    # Number of seconds the subscriber should listen for messages
+    # timeout = 5.0
 
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(
-        project_id, subscription_name
+        project_id, subscription_id
     )
 
     def callback(message):
@@ -61,20 +62,22 @@ def pubsub2bq(
     t = threading.Thread(target=worker_bq, name='worker_bq')
     t.start()
 
-    # result() in a future will block indefinitely if `timeout` is not set,
-    # unless an exception is encountered first.
-    try:
-        streaming_pull_future.result(timeout=timeout)
-    except:  # noqa
-        streaming_pull_future.cancel()
+    # Wrap subscriber in a 'with' block to automatically call close() when done.
+    with subscriber:
+        try:
+            # When `timeout` is not set, result() will block indefinitely,
+            # unless an exception is encountered first.
+            streaming_pull_future.result(timeout=timeout)
+        except TimeoutError:
+            streaming_pull_future.cancel()
     # [END pubsub_subscriber_flow_settings]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("project_id", help="Google Cloud project ID")
-    parser.add_argument("subscription_name", help="PubSub subscription name")
+    parser.add_argument("subscription_id", help="PubSub subscription ID")
     parser.add_argument("dataset_id", help="BigQuery dataset ID")
     parser.add_argument("table_id", help="BigQuery table ID")
 
     args = parser.parse_args()
-    pubsub2bq(args.project_id, args.subscription_name, args.dataset_id, args.table_id)
+    pubsub2bq(args.project_id, args.subscription_id, args.dataset_id, args.table_id)
