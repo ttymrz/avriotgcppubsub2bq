@@ -42,12 +42,14 @@ def pubsub2bq(
 
     def worker_bq():
         print('Running worker_bq')
-
-        while True:
+        t = threading.currentThread()
+        while getattr(t, 'do_run', True):
             jsonmsg = q.get()
             print('bq load')
             job = client.load_table_from_json([jsonmsg], table_ref)
             job.result()
+        print('Finish worker_bq')
+
 
     # Limit the subscriber to only have ten outstanding messages at a time.
     flow_control = pubsub_v1.types.FlowControl(max_messages=10)
@@ -61,7 +63,8 @@ def pubsub2bq(
     # start worker_bq thread
     t = threading.Thread(target=worker_bq, name='worker_bq')
     t.start()
-
+    
+    print('Start subscriber')
     # Wrap subscriber in a 'with' block to automatically call close() when done.
     with subscriber:
         try:
@@ -70,6 +73,8 @@ def pubsub2bq(
             streaming_pull_future.result(timeout=timeout)
         except TimeoutError:
             streaming_pull_future.cancel()
+    setattr(t, 'do_run', False)
+    t.join()
     # [END pubsub_subscriber_flow_settings]
 
 if __name__ == "__main__":
