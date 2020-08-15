@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import datetime
 import threading, queue
+import os
 
 def pubsub2bq(
     project_id, subscription_id, dataset_id, table_id, timeout=None
@@ -46,8 +47,11 @@ def pubsub2bq(
         while getattr(t, 'do_run', True):
             jsonmsg = q.get()
             print('bq load')
-            job = client.load_table_from_json([jsonmsg], table_ref)
-            job.result()
+            try:
+                job = client.load_table_from_json([jsonmsg], table_ref)
+                job.result()
+            except:
+                os._exit(1)
         print('Finish worker_bq')
 
 
